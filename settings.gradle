@@ -14,4 +14,4 @@ plugins {
 rootProject.name = 'supertokens-java'
 include('sdk')
 
-project(':sdk').name = "supertokens-sdk-java"
+project(':sdk').name = "supertokens-java"
