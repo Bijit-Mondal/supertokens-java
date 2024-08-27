@@ -1,3 +1,5 @@
+import com.vanniktech.maven.publish.SonatypeHost
+
 plugins {
     // Apply the groovy Plugin to add support for Groovy.
     id 'groovy'
@@ -5,55 +7,40 @@ plugins {
     // Apply the java-library plugin for API and implementation separation.
     id 'java-library'
 
-    id 'maven-publish'
-    id 'signing'
+    id "com.vanniktech.maven.publish" version "0.29.0"
 }
 
-version = '0.0.1-SNAPSHOT'
-group = 'io.github.bijit-mondal'
-
-publishing {
-    publications {
-        sdk(MavenPublication) {
-            from components.java
-            pom {
-                name = 'SuperTokens Java SDK'
-                description = 'Java SDK for SuperTokens'
-                url = 'https://github.com/Bijit-Mondal/supertokens-java'
-                licenses {
-                    license {
-                        name = 'The Apache License, Version 2.0'
-                        url = 'http://www.apache.org/licenses/LICENSE-2.0.txt'
-                    }
-                }
-                developers {
-                    developer {
-                        id = 'bijit-mondal'
-                        name = 'Bijit Mondal'
-                        email = 'bijitmondal3011@rediffmail.com'
-                    }
-                }
-                scm {
-                    connection = 'scm:git:git://github.com/Bijit-Mondal/supertokens-java.git'
-                    developerConnection = 'scm:git:ssh://git@github.com:Bijit-Mondal/supertokens-java.git'
-                    url = 'https://github.com/Bijit-Mondal/supertokens-java'
-                }
+mavenPublishing {
+    coordinates("io.github.bijit-mondal", "supertokens-java","0.0.1")
+    pom {
+        name = 'SuperTokens Java SDK'
+        description = 'Java SDK for SuperTokens'
+        inceptionYear = '2020'
+        url = 'https://github.com/Bijit-Mondal/supertokens-java'
+        licenses {
+            license {
+                name = 'The Apache License, Version 2.0'
+                url = 'http://www.apache.org/licenses/LICENSE-2.0.txt'
             }
         }
-    }
-    repositories {
-        maven {
-            name = "oss"
-            def releasesRepoUrl = uri("https://s01.oss.sonatype.org/service/local/staging/deploy/maven2/")
-            def snapshotsRepoUrl = uri("https://s01.oss.sonatype.org/content/repositories/snapshots/")
-            url = version.toString().endsWith("SNAPSHOT") ? snapshotsRepoUrl : releasesRepoUrl
-
-            credentials {
-                username = project.findProperty("ossrhUsername") ?: System.getenv("OSSRH_USERNAME")
-                password = project.findProperty("ossrhPassword") ?: System.getenv("OSSRH_PASSWORD")
+        developers {
+            developer {
+                id = 'bijit-mondal'
+                name = 'Bijit Mondal'
+                email = 'bijitmondal3011@rediffmail.com'
             }
         }
+        scm {
+            connection = 'scm:git:git://github.com/Bijit-Mondal/supertokens-java.git'
+            developerConnection = 'scm:git:ssh://git@github.com:Bijit-Mondal/supertokens-java.git'
+            url = 'https://github.com/Bijit-Mondal/supertokens-java'
+        }
     }
+    // Configure publishing to Maven Central
+    publishToMavenCentral(SonatypeHost.CENTRAL_PORTAL)
+
+    // Enable GPG signing for all publications
+    signAllPublications()
 }
 
 repositories {
