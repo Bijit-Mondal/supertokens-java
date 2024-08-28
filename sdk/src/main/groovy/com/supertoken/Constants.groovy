@@ -6,4 +6,9 @@ class Constants {
     static final String USER_COUNT = '/users/count'
     static final String USER_DELETE = '/user/remove'
     static final String USERS = '/users'
+    static final String API_KEY_HEADER = "api-key"
+    static final String API_VERSION_HEADER = "cdi-version"
+    static final String DASHBOARD_VERSION = "0.7"
+    static final String ONE_YEAR_IN_MS = 31536000000
+    static final String RATE_LIMIT_STATUS_CODE = 429
 }
