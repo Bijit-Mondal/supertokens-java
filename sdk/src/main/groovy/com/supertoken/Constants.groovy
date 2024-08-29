@@ -10,5 +10,5 @@ class Constants {
     static final String API_VERSION_HEADER = "cdi-version"
     static final String DASHBOARD_VERSION = "0.7"
     static final String ONE_YEAR_IN_MS = 31536000000
-    static final String RATE_LIMIT_STATUS_CODE = 429
+    static final Integer RATE_LIMIT_STATUS_CODE = 429
 }

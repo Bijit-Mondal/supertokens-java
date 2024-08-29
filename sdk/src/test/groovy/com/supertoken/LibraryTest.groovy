@@ -3,6 +3,7 @@
  */
 package com.supertoken
 
+import org.junit.jupiter.api.Test
 import spock.lang.Specification
 
 class LibraryTest extends Specification {
