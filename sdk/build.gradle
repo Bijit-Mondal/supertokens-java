@@ -6,7 +6,6 @@ plugins {
 
     // Apply the java-library plugin for API and implementation separation.
     id 'java-library'
-
     id "com.vanniktech.maven.publish" version "0.29.0"
 }
 

@@ -1,7 +1,11 @@
 package com.supertoken
 
 import groovy.util.logging.Slf4j
+import org.slf4j.LoggerFactory
+
 import java.text.SimpleDateFormat
+import java.util.logging.Level
+import java.util.logging.Logger
 
 import static com.supertoken.VersionInfo.version as VERSION
 
@@ -31,7 +35,9 @@ class SuperTokensDebug {
 
     static void enableDebugLogs() {
         // No direct equivalent of debug.enable in Groovy/Java, but you can configure logging levels here
-        System.setProperty("groovy.util.logging.Slf4j", SUPERTOKENS_DEBUG_NAMESPACE)
+        // System.setProperty("groovy.util.logging.Slf4j", SUPERTOKENS_DEBUG_NAMESPACE)
+        Logger supertokensLogger = (Logger) LoggerFactory.getLogger(SUPERTOKENS_DEBUG_NAMESPACE)
+        supertokensLogger.setLevel(Level.FINE)
     }
 
     private static boolean isDebugEnabled() {

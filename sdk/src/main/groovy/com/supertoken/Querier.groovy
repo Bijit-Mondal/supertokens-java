@@ -1,7 +1,9 @@
 package com.supertoken
 
+import groovy.json.JsonOutput
 import groovy.json.JsonSlurper
 import groovy.transform.ToString
+import jakarta.servlet.http.HttpServletRequest
 
 import static com.supertoken.Constants.*
 
@@ -44,6 +46,7 @@ class Querier {
         }
         return Querier.hostsAliveForTesting
     }
+
     static HttpURLConnection apiRequest(String url, String method, int attemptsRemaining, Map args = [:], Map kwargs = [:]) {
         if (attemptsRemaining == 0) {
             throw new Exception("Retry request failed")
@@ -70,13 +73,49 @@ class Querier {
     }
 
     static String getApiVersion(Map<String, Object> userContext = [:]) {
-        if (apiVersion != null) {
+        if (Querier.apiVersion != null) {
             return Querier.apiVersion
         }
-
         ProcessState.getInstance().addState(PROCESS_STATE.CALLING_SERVICE_IN_GET_API_VERSION)
-        // TODO: Add logic to get the API version
+        def f = { String url, String method ->
+            def headers = [:]
+            if (Querier.apiKey != null) {
+                headers[API_KEY_HEADER] = Querier.apiKey
+            }
+
+            // Get app info
+            AppInfo appInfo = SuperTokens.getInstance().appInfo
+            HttpServletRequest req = SuperTokens.getRequestFromUserContext(userContext)
+            NormalisedURLDomain websiteDomain = appInfo.getOrigin(req, userContext)
+
+            // Prepare query parameters
+            def queryParams = [
+                    apiDomain   : appInfo.apiDomain.getAsStringDangerous(),
+                    websiteDomain: websiteDomain.getAsStringDangerous()
+            ]
+
+            if (Querier.networkInterceptor != null) {
+                def ( newUrl, newMethod, newHeaders, newQueryParams ) = Querier.networkInterceptor.call(url, method, headers, queryParams, [:], userContext)
+                url = newUrl
+                method = newMethod
+                headers = newHeaders
+                queryParams = newQueryParams
+            }
+
+            return apiRequest(url, method, 2, [headers: headers], [params: queryParams])
+        }
+
+        def response = sendRequestHelper(new NormalisedURLPath(API_VERSION), "GET", f, this.hosts.size())
+        def cdiSupportedByServer = response["versions"]
+        def apiVersion = Utils.findMaxVersion(cdiSupportedByServer as List<String>, SUPPORTED_CDI_VERSIONS)
+
+        if (apiVersion == null) {
+            throw new Exception("The running SuperTokens core version is not compatible with this SDK. Please visit https://supertokens.io/docs/community/compatibility-table to find the right versions")
+        }
+
+        Querier.apiVersion = apiVersion
         return Querier.apiVersion
+
     }
 
     static Querier getInstance(String ridToCore = null) {
@@ -85,6 +124,7 @@ class Querier {
         }
         return new Querier(hosts, ridToCore)
     }
+
     static void init(List<Host> hosts, String apiKey = null,
                      Closure<Tuple5<String, String, Map<String, Object>, Map<String, Object>, Map<String, Object>>> networkInterceptor = null,
                      boolean disableCache = false) {
@@ -102,12 +142,12 @@ class Querier {
 
     Map<String, Object> getHeadersWithApiVersion(NormalisedURLPath path, Map<String, Object> userContext = [:]) {
         Map<String, Object> headers = [:]
-        headers.put(API_VERSION_HEADER, getApiVersion(userContext))
+        headers[API_VERSION_HEADER] =  getApiVersion(userContext)
         if (Querier.apiKey != null) {
-            headers.put(API_KEY_HEADER, Querier.apiKey)
+            headers[API_KEY_HEADER] = Querier.apiKey
         }
         if (path.isARecipePath() && this.ridToCore != null) {
-            headers.put(RID_KEY_HEADER, this.ridToCore)
+            headers[RID_KEY_HEADER] = this.ridToCore
         }
         return headers
     }
@@ -145,13 +185,13 @@ class Querier {
     }
 
 
-
     static def sendGetRequest(NormalisedURLPath path, Map<String, Object> params, Map<String, Object> userContext) {
         if (params == null) {
             params = [:]
         }
+        def coreCallCache
         def f = { String url, String method ->
-            Map<String,Object> headers = getHeadersWithApiVersion(path, userContext)
+            Map<String, Object> headers = getHeadersWithApiVersion(path, userContext)
 
             // Sort the keys for deterministic order
             List<String> sortedKeys = params.keySet().sort()
@@ -181,7 +221,7 @@ class Querier {
                     invalidateCoreCallCache(userContext, false)
                 }
 
-                def coreCallCache = userContext.get("_default", [:]).get("core_call_cache", [:])
+                coreCallCache = userContext.get("_default", [:]).get("core_call_cache", [:])
                 if (!Querier.disableCache && coreCallCache.containsKey(uniqueKey)) {
                     return coreCallCache[uniqueKey]
                 }
@@ -199,7 +239,7 @@ class Querier {
 
             if (response.getResponseCode() == 200 && !Querier.disableCache && userContext != null) {
                 userContext["_default"] = userContext.get("_default", [:]) + [
-                        "core_call_cache": coreCallCache + [(uniqueKey): response],
+                        "core_call_cache" : coreCallCache + [(uniqueKey): response],
                         "global_cache_tag": this.globalCacheTag
                 ]
             }
@@ -209,65 +249,135 @@ class Querier {
 
         return sendRequestHelper(path, "GET", f, hosts.size())
     }
-    private static def sendRequestHelper(NormalisedURLPath path,String method,Closure<Object> httpFunction,int noOfTries, Map<String, Integer> retryInfoMap = [:]) {
+
+    static def sendPostRequest(NormalisedURLPath path, Map<String, Object> data = [:], Map<String, Object> userContext = [:], boolean test = false) {
+        invalidateCoreCallCache(userContext)
+
+        if (data == null) {
+            data = [:]
+        }
+
+        if (System.getenv("SUPERTOKENS_ENV") == "testing" && test) {
+            return data
+        }
+
+
+        def f = { String url, String method ->
+            Map<String, Object> headers = getHeadersWithApiVersion(path, userContext)
+            headers["content-type"] = "application/json; charset=utf-8"
+            if (Querier.networkInterceptor != null) {
+                def (newUrl, newMethod, newHeaders, newData) = Querier.networkInterceptor.call(url, method, headers, [:], data, userContext)
+                url = newUrl
+                method = newMethod
+                headers = newHeaders
+                data = newData
+            }
+            return apiRequest(url, method, 2, [headers: headers, json: JsonOutput.toJson(data)])
+        }
+
+        return sendRequestHelper(path, "POST", f, this.hosts.size())
+    }
+
+    static def sendDeleteRequest(NormalisedURLPath path, Map<String, Object> params = [:], Map<String, Object> userContext = [:]) {
+        this.invalidateCoreCallCache(userContext)
+
+        if (params == null) {
+            params = [:]
+        }
+
+        def f = { String url, String method ->
+            Map<String, Object> headers = getHeadersWithApiVersion(path, userContext)
+
+            if (Querier.networkInterceptor != null) {
+                def (newUrl, newMethod, newHeaders, newParams)  = Querier.networkInterceptor.call(url, method, headers, params, [:], userContext)
+                url = newUrl
+                method = newMethod
+                headers = newHeaders
+                params = newParams
+            }
+            return apiRequest(url, method, 2, headers: headers, params: params)
+        }
+
+        return sendRequestHelper(path, "DELETE", f, this.hosts.size())
+    }
+
+    static def sendPutRequest(NormalisedURLPath path, Map<String, Object> data = [:], Map<String, Object> userContext = [:]) {
+        this.invalidateCoreCallCache(userContext)
+        if (data == null) {
+            data = [:]
+        }
+        def f = { String url, String method ->
+            Map<String,Object> headers = getHeadersWithApiVersion(path, userContext)
+            headers["content-type"] = "application/json; charset=utf-8"
+
+            if (Querier.networkInterceptor != null) {
+                def (newUrl, newMethod, newHeaders, newData) = Querier.networkInterceptor.call(url, method, headers, [:], data, userContext)
+                url = newUrl
+                method = newMethod
+                headers = newHeaders
+                data = newData
+            }
+            return apiRequest(url, method, 2, [headers: headers, json: data])
+        }
+
+    }
+
+
+    private static def sendRequestHelper(NormalisedURLPath path, String method, Closure<Object> httpFunction, int noOfTries, Map<String, Integer> retryInfoMap = [:]) {
         if (noOfTries <= 0) {
             throw new Exception("No SuperTokens core available to query")
         }
+        String currentHostDomain = this.hosts[Querier.lastTriedIndex].domain.getAsStringDangerous()
+        String currentHostBasePath = this.hosts[Querier.lastTriedIndex].basePath.getAsStringDangerous()
+        def currentHost = currentHostDomain + currentHostBasePath
+        Querier.lastTriedIndex = (Querier.lastTriedIndex + 1) % this.hosts.size()
+        def url = currentHost + path.getAsStringDangerous()
+
+        int maxRetries = 5
+
+        if (retryInfoMap == null) {
+            retryInfoMap = [:]
+        }
+
+        if (!retryInfoMap.containsKey(url)) {
+            retryInfoMap[url] = maxRetries
+        }
+
+        ProcessState.getInstance().addState(PROCESS_STATE.CALLING_SERVICE_IN_REQUEST_HELPER)
+        HttpURLConnection response = httpFunction.call(url, method) as HttpURLConnection
+
+        if (System.getenv("SUPERTOKENS_ENV") == "testing") {
+            Querier.hostsAliveForTesting.add(currentHost)
+        }
+
+        if (response.getResponseCode() == RATE_LIMIT_STATUS_CODE) {
+            def retriesLeft = retryInfoMap[url]
+
+            if (retriesLeft > 0) {
+                retryInfoMap[url] = retriesLeft - 1
+                def attemptsMade = maxRetries - retriesLeft
+                def delay = (10 + attemptsMade * 250) / 1000.0
+
+                sleep((long) (delay * 1000))
+                return sendRequestHelper(path, method, httpFunction, noOfTries, retryInfoMap)
+            }
+        }
+
+        if (Utils.is4xxError(response.getResponseCode()) || Utils.is5xxError(response.getResponseCode())) {
+            throw new Exception("SuperTokens core threw an error for a ${method} request to path: ${path.getAsStringDangerous()} with status code: ${response.statusCode} and message: ${response.text}")
+        }
+
+        def res = ["_headers": response.getHeaderFields()]
+        // Reading and parsing the JSON response
+        String responseText = response.getInputStream().text
         try {
-            String currentHostDomain = this.hosts[Querier.lastTriedIndex].domain.getAsStringDangerous()
-            String currentHostBasePath = this.hosts[Querier.lastTriedIndex].basePath.getAsStringDangerous()
-            def currentHost = currentHostDomain + currentHostBasePath
-            Querier.lastTriedIndex = (Querier.lastTriedIndex + 1) % this.hosts.size()
-            def url = currentHost + path.getAsStringDangerous()
-
-            int maxRetries = 5
-
-            if (retryInfoMap == null) {
-                retryInfoMap = [:]
-            }
-
-            if (!retryInfoMap.containsKey(url)) {
-                retryInfoMap[url] = maxRetries
-            }
-
-            ProcessState.getInstance().addState(PROCESS_STATE.CALLING_SERVICE_IN_REQUEST_HELPER)
-            HttpURLConnection response = httpFunction.call(url, method) as HttpURLConnection
-
-            if (System.getenv("SUPERTOKENS_ENV") == "testing") {
-                Querier.hostsAliveForTesting.add(currentHost)
-            }
-
-            if (response.getResponseCode() == RATE_LIMIT_STATUS_CODE) {
-                def retriesLeft = retryInfoMap[url]
-
-                if (retriesLeft > 0) {
-                    retryInfoMap[url] = retriesLeft - 1
-                    def attemptsMade = maxRetries - retriesLeft
-                    def delay = (10 + attemptsMade * 250) / 1000.0
-
-                    sleep((long) (delay * 1000))
-                    return sendRequestHelper(path, method, httpFunction, noOfTries, retryInfoMap)
-                }
-            }
-
-            if (Utils.is4xxError(response.getResponseCode()) || Utils.is5xxError(response.getResponseCode())) {
-                throw new Exception("SuperTokens core threw an error for a ${method} request to path: ${path.getAsStringDangerous()} with status code: ${response.statusCode} and message: ${response.text}")
-            }
-
-            def res = ["_headers": response.getHeaderFields()]
-            // Reading and parsing the JSON response
-            String responseText = response.getInputStream().text
-            try {
-                JsonSlurper jsonSlurper = new JsonSlurper()
-                def jsonResponse = jsonSlurper.parseText(responseText)
-                res.putAll(jsonResponse as Map)
-            } catch (Exception e) {
-                res["_text"] = responseText
-            }
+            JsonSlurper jsonSlurp = new JsonSlurper()
+            def jsonResponse = jsonSlurp.parseText(responseText)
+            res.putAll(jsonResponse as Map)
+        } catch (Exception ignored) {
+            res["_text"] = responseText
 
             return res
-        } catch (Exception ignored) {
-            return sendRequestHelper(path, method, httpFunction, noOfTries - 1, retryInfoMap)
         }
     }
 }

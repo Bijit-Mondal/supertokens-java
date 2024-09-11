@@ -18,7 +18,7 @@ class NormalisedURLDomain {
 
         try {
             if (!input.startsWith("http://") && !input.startsWith("https://") && !input.startsWith("supertokens://")) {
-                throw new IllegalArgumentException("Converting to proper URL")
+                throw new IllegalArgumentException("Convert to proper URL")
             }
 
             URL urlObj = new URL(input)
@@ -29,7 +29,7 @@ class NormalisedURLDomain {
                     input = "https://${urlObj.host}"
                 }
             } else {
-                input = "${urlObj.protocol}//${urlObj.host}"
+                input = "${urlObj.protocol}://${urlObj.host}"
             }
 
             return input

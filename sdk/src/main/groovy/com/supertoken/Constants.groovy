@@ -8,6 +8,8 @@ class Constants {
     static final String USERS = '/users'
     static final String API_KEY_HEADER = "api-key"
     static final String API_VERSION_HEADER = "cdi-version"
+    static final String API_VERSION = "/apiversion"
+    static final List<String> SUPPORTED_CDI_VERSIONS = ["3.0"]
     static final String DASHBOARD_VERSION = "0.7"
     static final String ONE_YEAR_IN_MS = 31536000000
     static final Integer RATE_LIMIT_STATUS_CODE = 429
